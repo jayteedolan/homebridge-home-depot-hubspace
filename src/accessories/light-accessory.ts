@@ -28,6 +28,7 @@ export class LightAccessory extends HubspaceAccessory {
         this.configurePower();
         this.configureBrightness();
         this.configureColorRgb();
+        this.configureColorTemperature();
     }
 
     private configurePower(): void {
@@ -158,6 +159,46 @@ export class LightAccessory extends HubspaceAccessory {
 
     private isColorDefined(): boolean {
         return !isNullOrUndefined(this._lightColor.hue) && !isNullOrUndefined(this._lightColor.saturation);
+    }
+
+    private configureColorTemperature(): void {
+        if (!this.supportsCharacteristic(FunctionCharacteristic.ColorTemperature)) return;
+
+        this.service.getCharacteristic(this.platform.Characteristic.ColorTemperature)
+            .setProps({ minValue: 140, maxValue: 500 })
+            .onGet(this.getColorTemperature.bind(this))
+            .onSet(this.setColorTemperature.bind(this));
+    }
+
+    private async getColorTemperature(): Promise<CharacteristicValue> {
+        const deviceFc = this.getFunctionForCharacteristics(FunctionCharacteristic.ColorTemperature);
+        const rawValue = await this.deviceService.getValueAsString(this.device.deviceId, deviceFc);
+
+        // Parse little-endian hex: e.g. "9808" → 0x0898 = 2200K
+        let kelvin = 0;
+        if (rawValue && rawValue.length >= 4) {
+            const lowByte = parseInt(rawValue.substring(0, 2), 16);
+            const highByte = parseInt(rawValue.substring(2, 4), 16);
+            kelvin = (highByte << 8) | lowByte;
+        }
+
+        if (!kelvin || kelvin <= 0) {
+            return 333; // Default ~3000K
+        }
+
+        // Convert Kelvin to mired, clamped to HomeKit range
+        return Math.max(140, Math.min(500, Math.round(1000000 / kelvin)));
+    }
+
+    private async setColorTemperature(value: CharacteristicValue): Promise<void> {
+        const deviceFc = this.getFunctionForCharacteristics(FunctionCharacteristic.ColorTemperature);
+        const targetKelvin = Math.round(1000000 / (value as number));
+
+        // Hubspace expects color temperature as a little-endian hex-encoded integer
+        const lowByte = (targetKelvin & 0xFF).toString(16).padStart(2, '0');
+        const highByte = ((targetKelvin >> 8) & 0xFF).toString(16).padStart(2, '0');
+
+        await this.deviceService.setValue(this.device.deviceId, deviceFc, lowByte + highByte);
     }
 
 }

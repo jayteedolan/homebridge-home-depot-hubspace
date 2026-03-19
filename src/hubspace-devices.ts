@@ -35,6 +35,10 @@ export const Devices: DeviceDef[] = [
             {
                 functionClass: 'color-rgb',
                 characteristic: FunctionCharacteristic.ColorRgb
+            },
+            {
+                functionClass: 'color-temperature',
+                characteristic: FunctionCharacteristic.ColorTemperature
             }
         ]
     },
